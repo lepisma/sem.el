@@ -13,7 +13,7 @@ Set up a directory for keeping stores. Then create or load a store.
 
   (setq store (sem-store-new "test-store" 10))
   ;; Or
-  ;; (setq store (sem-store-load "test-store"))-
+  ;; (setq store (sem-store-load "test-store"))
 
   (defun dummy-embed-fn (item)
     (make-vector 10 0.0))
