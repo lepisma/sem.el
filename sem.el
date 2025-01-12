@@ -58,7 +58,7 @@
 
 (defun sem-similar (store item k &optional write-fn embed-fn read-fn)
   (let ((results (sem-core-similar store (funcall embed-fn (funcall write-fn item)) k)))
-    (mapcar (lambda (it) (cons (car it) (read-fn (cdr it)))) results)))
+    (mapcar (lambda (it) (cons (car it) (funcall read-fn (cdr it)))) results)))
 
 (defun sem-similar-batch (store items k &optional write-fn embed-fn read-fn)
   (error "Batch methods not implemented yet"))
