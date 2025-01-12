@@ -48,24 +48,27 @@
       (error "`sem-database-dir' is not set")
     (sem-core-store-load sem-database-dir name)))
 
-(defun sem-add (store item &optional write-fn embed-fn)
-  ;; TODO Fix write fn
-  (let ((string-representation (funcall write-fn item)))
-    (sem-core-add sem-database-dir store string-representation (funcall embed-fn string-representation))))
+(defun sem-add (store item embed-fn &optional write-fn)
+  "Add given ITEM to the STORE.
 
-(defun sem-add-batch (store items &optional write-fn embed-fn)
-  (error "Batch methods not implemeted yet"))
+WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
+used to convert the item, directly, to vector."
+  (sem-core-add sem-database-dir store (funcall (or write-fn #'prin1) item) (funcall embed-fn item)))
 
-(defun sem-similar (store item k &optional write-fn embed-fn read-fn)
-  (let ((results (sem-core-similar store (funcall embed-fn (funcall write-fn item)) k)))
-    (mapcar (lambda (it) (cons (car it) (funcall read-fn (cdr it)))) results)))
+(defun sem-similar (store item k embed-fn &optional read-fn)
+  "Return K items similar to ITEM from STORE.
 
-(defun sem-similar-batch (store items k &optional write-fn embed-fn read-fn)
-  (error "Batch methods not implemented yet"))
+EMBED-FN is used to convert the item, directly, to vector.  READ-FN
+defaults to `read' and is used to recover the emacs-lisp object back
+from the store."
+  (let ((results (sem-core-similar store (funcall embed-fn item) k)))
+    (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
 
 (defun sem-item-present-p (store item &optional write-fn)
-  ;; TODO Fix write fn
-  (sem-core-item-present-p store (funcall write-fn item)))
+  "Return nil if ITEM is not present in STORE, else return the index.
+
+WRITE-FN defaults to `prin1' and is used for serialization."
+  (sem-core-item-present-p store (funcall (or write-fn #'prin1) item)))
 
 (provide 'sem)
 

@@ -1,3 +1,29 @@
 #+TITLE: sem.el
 
-Local semantic indexing and search for Emacs.
+Local semantic indexing and search for Emacs. This is a work in progress as of
+now.
+
+* Usage
+Set up a directory for keeping stores. Then create or load a store.
+
+#+begin_src emacs-lisp
+  (require 'sem)
+
+  (setq sem-database-dir "/some/path")
+
+  (setq store (sem-store-new "test-store" 10))
+  ;; Or
+  ;; (setq store (sem-store-load "test-store"))-
+
+  (defun dummy-embed-fn (item)
+    (make-vector 10 0.0))
+
+  ;; Add items in store
+  (let ((items (list "here" "is" "something")))
+    (mapc (lambda (item) (sem-add store item #'dummy-embed-fn)) items))
+
+  ;; Find top 4 similar items with scores
+  (sem-similar store "what" 4 #'dummy-embed-fn)
+#+end_src
+
+Check out [[https://github.com/lepisma/onnx.el][onnx.el]] for some ways to build a reasonable embed function.
