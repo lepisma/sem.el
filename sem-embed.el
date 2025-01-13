@@ -38,6 +38,9 @@
   "Path to the ONNX file for all-MiniLM-L6-v2 model."
   :type 'string)
 
+(defvar sem-embed-dim 384
+  "Embedding dimension for the default tokenizer.")
+
 (defvar sem-embed-tokenizer nil
   "Placeholder for keeping the default tokenizer.")
 
