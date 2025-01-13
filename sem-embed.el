@@ -39,7 +39,7 @@
   :type 'string)
 
 (defvar sem-embed-dim 384
-  "Embedding dimension for the default tokenizer.")
+  "Embedding dimension for the default model.")
 
 (defvar sem-embed-tokenizer nil
   "Placeholder for keeping the default tokenizer.")
