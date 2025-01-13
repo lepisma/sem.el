@@ -36,17 +36,27 @@
   "Directory where sem will keep all indices and data."
   :type 'string)
 
+(defun sem-store-present-p (name)
+  "Return whether a store with NAME is already present."
+  (if (not sem-database-dir)
+      (error "`sem-database-dir' is not set")
+    (file-exists-p (concat (file-name-as-directory sem-database-dir) name ".matrix"))))
+
 (defun sem-store-new (name emb-size)
   "Create a new sem store NAME with vectors of dim EMB-SIZE."
   (if (not sem-database-dir)
       (error "`sem-database-dir' is not set")
-    (sem-core-store-new sem-database-dir name emb-size)))
+    (if (sem-store-present-p name)
+        (error "Store %s already exists" name)
+      (sem-core-store-new sem-database-dir name emb-size))))
 
 (defun sem-store-load (name)
-  "Load an existing store NAME."
+  "Load an existing store NAME and return."
   (if (not sem-database-dir)
       (error "`sem-database-dir' is not set")
-    (sem-core-store-load sem-database-dir name)))
+    (if (sem-store-present-p name)
+        (sem-core-store-load sem-database-dir name)
+      (error "Store %s doesn't exist" name))))
 
 (defun sem-add (store item embed-fn &optional write-fn)
   "Add given ITEM to the STORE.
