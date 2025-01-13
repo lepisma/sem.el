@@ -4,26 +4,41 @@ Local semantic indexing and search for Emacs. This is a work in progress as of
 now.
 
 * Usage
-Set up a directory for keeping stores. Then create or load a store.
+The example below needs you to have [[https://github.com/lepisma/tokenizers.el][tokenizers.el]] and [[https://github.com/lepisma/onnx.el][onnx.el]] installed as they
+are needed by ~sem-embed~.
 
 #+begin_src emacs-lisp
   (require 'sem)
+  ;; sem-embed is an optional package providing general purpose local embedding
+  ;; functions
+  (require 'sem-embed)
 
-  (setq sem-database-dir "/some/path")
+  (setq sem-database-dir (expand-file-name "~/.emacs.d/sem/"))
+  (setq sem-embed-model-path (expand-file-name "~/.emacs.d/sem/model_O2.onnx"))
 
-  (setq store (sem-store-new "test-store" 10))
-  ;; Or
-  ;; (setq store (sem-store-load "test-store"))
+  (defun embed-fn (item)
+    "The embedding function that takes lisp object and converts to a single
+  dimensional vector representation."
+    ;; This is needed since the sem-embed-default is a batched function
+    (aref (sem-embed-default (vector (prin1 item))) 0))
 
-  (defun dummy-embed-fn (item)
-    (make-vector 10 0.0))
+  ;; The output dimension of default embedder from sem-embed is needed here
+  (sem-store-new "ml-test" sem-embed-dim)
+  (setq sem-store (sem-store-load "ml-test"))
 
-  ;; Add items in store
-  (let ((items (list "here" "is" "something")))
-    (mapc (lambda (item) (sem-add store item #'dummy-embed-fn)) items))
+  ;; First we will add a few items to do similarity search
+  (let ((items (list "hello world"
+                     "this is an introduction"
+                     "movies are bad"
+                     "food is good")))
+    (cl-loop for item in items
+  	   do (unless (sem-item-present-p sem-store item)
+  		(sem-add sem-store item #'embed-fn))))
 
-  ;; Find top 4 similar items with scores
-  (sem-similar store "what" 4 #'dummy-embed-fn)
+  ;; #'identity is the read-fn which is used to load back the lisp object from
+  ;; their string representation. By default the `sem-add' function uses `prin1'
+  ;; for building the strings representation.
+  (sem-similar sem-store "worst" 2 #'embed-fn #'identity)
+  ;; ((0.33184681863908483 . "movies are bad") (0.25182008665115796 . "hello world"))
+  ;; Output is a list of score, item pairs
 #+end_src
-
-Check out [[https://github.com/lepisma/onnx.el][onnx.el]] for some ways to build a reasonable embed function.
