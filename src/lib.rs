@@ -1,8 +1,12 @@
-use std::{collections::HashMap, fs::File, io::Write, io::Read, path};
+use std::{fmt::Debug, fs::File, io::{Read, Write}, ops::BitOr, path, sync::Arc};
 
 use emacs::{defun, Env, IntoLisp, Value, Vector};
 use anyhow::{anyhow, Result};
-use ndarray::{Array1, Array2};
+use arrow_array::{builder::Float64BufferBuilder, types::{Float32Type, Float64Type}, Datum, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_schema::{DataType, Field, Schema};
+use lancedb::query::ExecutableQuery;
+use lancedb::index::Index;
+use futures_util::TryStreamExt;
 
 emacs::plugin_is_GPL_compatible!();
 
@@ -13,52 +17,31 @@ fn init(env: &Env) -> Result<Value<'_>> {
 
 struct Store {
     name: String,
-    emb_size: usize,
-    embeddings: Array2<f64>,
-    idx_to_hash: HashMap<usize, String>,
-    hash_to_idx: HashMap<String, usize>,
-    hash_to_content: HashMap<String, String>,
-    similarities: Array2<f64>,
+    db: lancedb::connection::Connection
 }
 
 fn store_create(dir: &String, name: &String, emb_size: usize) -> Result<()> {
-    let dir_path = path::Path::new(dir);
+    let db_path = path::Path::new(dir).join(name);
 
-    let embeddings: Array2<f64> = Array2::<f64>::zeros((0, emb_size));
-    let idx_to_hash: HashMap<usize, String> = HashMap::new();
-    let hash_to_idx: HashMap<String, usize> = HashMap::new();
-    let hash_to_content: HashMap<String, String> = HashMap::new();
-    let similarities: Array2<f64> = Array2::<f64>::zeros((0, 0));
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let db = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
 
-    let store = Store {
-        name: name.to_string(),
-        emb_size,
-        embeddings,
-        idx_to_hash,
-        hash_to_idx,
-        hash_to_content,
-        similarities,
-    };
+    let schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), emb_size as i32),
+            true,
+        ),
+        Field::new(
+            "content",
+            DataType::Utf8,
+            true
+        )
+    ]));
 
-    store_write(dir_path, &store)
-}
-
-fn store_write(dir_path: &path::Path, store: &Store) -> Result<()> {
-    let mut file = File::create(dir_path.join(format!("{}.hash_to_idx", store.name)))?;
-    file.write_all(&bincode::serialize(&store.hash_to_idx).unwrap())?;
-
-    let mut file = File::create(dir_path.join(format!("{}.hash_to_content", store.name)))?;
-    file.write_all(&bincode::serialize(&store.hash_to_content).unwrap())?;
-
-    let mut file = File::create(dir_path.join(format!("{}.matrix", store.name)))?;
-    file.write_all(&bincode::serialize(&store.embeddings).unwrap())?;
+    rt.block_on(db.create_empty_table(name, schema).execute())?;
 
     Ok(())
-}
-
-fn compute_similarities(embeddings: &Array2<f64>) -> Array2<f64> {
-    // We assume that embeddings are already normalized
-    embeddings.dot(&embeddings.t())
 }
 
 #[defun(user_ptr)]
@@ -72,113 +55,125 @@ fn store_new(dir: String, name: String, emb_size: usize) -> Result<Store> {
 
 #[defun(user_ptr)]
 fn store_load(dir: String, name: String) -> Result<Store> {
-    let dir_path = path::Path::new(&dir);
+    let db_path = path::Path::new(&dir).join(&name);
 
-    let mut file = File::open(dir_path.join(format!("{}.hash_to_idx", name)))?;
-    let mut encoded_hash_to_idx = Vec::new();
-    file.read_to_end(&mut encoded_hash_to_idx)?;
-    let hash_to_idx: HashMap<String, usize> = bincode::deserialize(&encoded_hash_to_idx)?;
-    let idx_to_hash: HashMap<usize, String> = hash_to_idx
-        .clone()
-        .into_iter()
-        .map(|(key, value)| (value, key))
-        .collect();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let db = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
 
-    let mut file = File::open(dir_path.join(format!("{}.hash_to_content", name)))?;
-    let mut encoded_hash_to_content = Vec::new();
-    file.read_to_end(&mut encoded_hash_to_content)?;
-    let hash_to_content: HashMap<String, String> = bincode::deserialize(&encoded_hash_to_content)?;
-
-    let mut file = File::open(dir_path.join(format!("{}.matrix", name)))?;
-    let mut encoded_embeddings = Vec::new();
-    file.read_to_end(&mut encoded_embeddings)?;
-    let embeddings: Array2<f64> = bincode::deserialize(&encoded_embeddings)?;
-    let similarities = compute_similarities(&embeddings);
-
-    Ok(Store {
-        name,
-        emb_size: embeddings.ncols(),
-        embeddings,
-        idx_to_hash,
-        hash_to_idx,
-        hash_to_content,
-        similarities,
-    })
+    Ok(Store { name, db, })
 }
 
-fn hash_content(content: String) -> String {
-    sha256::digest(content)
-}
-
-// Add given item in the store and return index
+// Add given items in the store
 #[defun]
-fn add<'a>(env: &'a Env, dir: String, store: &mut Store, content: String, emb: Vector) -> Result<usize> {
-    let n_emb = emb.len();
+fn add_batch<'a>(env: &'a Env, store: &mut Store, contents: Vector, embs: Vector) -> Result<()> {
+    let n_items = embs.len();
+    // TODO: Get rid of this hardcoding
+    let dim = 384;
 
-    if n_emb != store.emb_size {
-        return Err(anyhow!("Embedding dimension doesn't match the store's."));
-    }
+    let schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), dim),
+            true,
+        ),
+        Field::new(
+            "content",
+            DataType::Utf8,
+            true
+        ),
+    ]));
 
-    let row: Array1<f64> = (0..n_emb)
-        .map(|i| env.call("aref", (emb, i)).unwrap().into_rust().unwrap())
-        .collect::<Array1<_>>();
-    store.embeddings.push_row(row.view())?;
+    let contents_vec: Vec<String> = (0..n_items)
+        .map(|i| env.call("aref", (contents, i)).unwrap().into_rust().unwrap())
+        .collect::<Vec<_>>();
 
-    let hash = hash_content(content.clone());
-    let idx = store.embeddings.nrows() - 1;
-    store.hash_to_idx.insert(hash.clone(), idx);
-    store.hash_to_content.insert(hash.clone(), content);
-    store.idx_to_hash.insert(idx, hash);
+    let embs_vec: Vec<Option<Vec<Option<f64>>>> = (0..n_items)
+        .map(|i| {
+            let row = env.call("aref", (embs, i)).unwrap();
+            Some((0..dim).map(|j| Some(env.call("aref", (row, j)).unwrap().into_rust().unwrap())).collect::<Vec<_>>())
+        })
+        .collect::<Vec<_>>();
 
-    // On every entry, we rewrite the whole store. This can be improved on.
-    let dir_path = path::Path::new(&dir);
-    store_write(dir_path, store)?;
+    let batches = RecordBatchIterator::new(
+        vec![
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(
+                        FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(embs_vec, dim)
+                    ),
+                    Arc::new(StringArray::from(contents_vec)),
+                ],
+            )
+            .unwrap()
+        ]
+            .into_iter()
+            .map(Ok),
+        schema.clone(),
+    );
 
-    // TODO: Optimize this
-    store.similarities = compute_similarities(&store.embeddings);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let table = store.db.open_table(&store.name)
+            .execute().await
+            .unwrap();
 
-    Ok(idx)
-}
+        table.add(batches)
+            .execute().await
+            .unwrap();
+    });
 
-// If content is present return its index, else return nil
-#[defun]
-fn item_present_p<'a>(env: &'a Env, store: &mut Store, content: String) -> Result<Value<'a>> {
-    let hash = hash_content(content);
-
-    if store.hash_to_idx.contains_key(&hash) {
-        let idx = store.hash_to_idx[&hash];
-        Ok(idx.into_lisp(env)?)
-    } else {
-        Ok(env.intern("nil")?)
-    }
+    Ok(())
 }
 
 #[defun]
 fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result<Value<'a>> {
-    let emb_array: Array1<f64> = (0..emb.len())
+    let vector: Vec<f64> = (0..emb.len())
         .map(|i| env.call("aref", (emb, i)).unwrap().into_rust().unwrap())
-        .collect::<Array1<_>>();
-    let scores: Array1<f64> = store.embeddings.dot(&emb_array);
-    let mut indices: Vec<usize> = (0..scores.len()).collect();
-    indices.sort_by(|&a, &b| scores[b].partial_cmp(&scores[a]).unwrap());
+        .collect::<Vec<_>>();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let results = rt.block_on(async {
+        store.db.open_table(&store.name)
+            .execute().await.
+            unwrap()
+            .query()
+            .nearest_to(vector.clone())
+            .unwrap()
+            .execute().await
+            .unwrap()
+            .try_collect::<Vec<_>>().await
+            .unwrap()
+    });
 
     let mut output: Vec<Value> = Vec::with_capacity(k);
-    let mut n_collected = 0;
-    for i in 0..scores.len() {
-        let idx = indices[i];
-        if !store.idx_to_hash.contains_key(&idx) {
-            continue;
-        }
+    let mut n_done: usize = 0;
+    let dim = 384;
 
-        let score = scores[idx];
-        let hash = store.idx_to_hash.get(&idx).unwrap();
-        let content = store.hash_to_content.get(hash).unwrap();
-
-        output.push(env.call("cons", (score, content))?);
-        n_collected += 1;
-        if n_collected >= k {
-            break
+    for batch in results.into_iter() {
+        // 0 -> vector, 1 -> content
+        let n_col = batch.num_columns();
+        if n_col < 2 {
+            return Err(anyhow!("Query result had incorrect number of columns"));
         }
+        let embeddings = batch.column(0).as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        let contents = batch.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+
+        for i in 0..batch.num_rows() {
+            let embedding: Vec<f64> = (0..dim)
+                .map(|j| embeddings.value(i).as_any().downcast_ref::<Float64Array>().unwrap().value(j))
+                .collect();
+
+            let content = contents.value(i).to_string();
+            // This is something that should be pulled from the library, but
+            // since k is limited, we will just compute it right away.  Also the
+            // assumption is that the vectors are normalized.
+            let score: f64 = vector.iter().zip(embedding.iter()).map(|(x, y)| x * y).sum();
+            output.push(env.cons(score, content)?);
+            n_done += 1;
+            if n_done > k { break }
+        }
+        if n_done > k { break }
     }
 
     Ok(env.vector(&output)?)

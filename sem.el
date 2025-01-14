@@ -40,7 +40,7 @@
   "Return whether a store with NAME is already present."
   (if (not sem-database-dir)
       (error "`sem-database-dir' is not set")
-    (file-exists-p (concat (file-name-as-directory sem-database-dir) name ".matrix"))))
+    (file-exists-p (concat (file-name-as-directory sem-database-dir) name))))
 
 (defun sem-store-new (name emb-size)
   "Create a new sem store NAME with vectors of dim EMB-SIZE."
@@ -58,27 +58,23 @@
         (sem-core-store-load sem-database-dir name)
       (error "Store %s doesn't exist" name))))
 
-(defun sem-add (store item embed-fn &optional write-fn)
-  "Add given ITEM to the STORE.
+(defun sem-add-batch (store items embed-fn &optional write-fn)
+  "Add given ITEMS (list) to the STORE.
 
 WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
-used to convert the item, directly, to vector."
-  (sem-core-add sem-database-dir store (funcall (or write-fn #'prin1) item) (funcall embed-fn item)))
+used to convert the list of items to 2D vector."
+  (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1) item)) items)))
+        (embeddings (funcall embed-fn items)))
+    (sem-core-add-batch store contents embeddings)))
 
 (defun sem-similar (store item k embed-fn &optional read-fn)
   "Return K items similar to ITEM from STORE.
 
-EMBED-FN is used to convert the item, directly, to vector.  READ-FN
+EMBED-FN is used to convert a list of items to 2D vector.  READ-FN
 defaults to `read' and is used to recover the emacs-lisp object back
 from the store."
-  (let ((results (sem-core-similar store (funcall embed-fn item) k)))
+  (let ((results (sem-core-similar store (aref (funcall embed-fn (list item)) 0) k)))
     (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
-
-(defun sem-item-present-p (store item &optional write-fn)
-  "Return nil if ITEM is not present in STORE, else return the index.
-
-WRITE-FN defaults to `prin1' and is used for serialization."
-  (sem-core-item-present-p store (funcall (or write-fn #'prin1) item)))
 
 (provide 'sem)
 
