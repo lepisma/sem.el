@@ -135,8 +135,8 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
         store.db.open_table(&store.name)
-            .execute().await.
-            unwrap()
+            .execute().await
+            .unwrap()
             .query()
             .nearest_to(vector.clone())
             .unwrap()
@@ -151,6 +151,7 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
     let dim = 384;
 
     for batch in results.into_iter() {
+        if n_done >= k { break }
         // 0 -> vector, 1 -> content
         let n_col = batch.num_columns();
         if n_col < 2 {
@@ -160,6 +161,7 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
         let contents = batch.column(1).as_any().downcast_ref::<StringArray>().unwrap();
 
         for i in 0..batch.num_rows() {
+            if n_done >= k { break }
             let embedding: Vec<f64> = (0..dim)
                 .map(|j| embeddings.value(i).as_any().downcast_ref::<Float64Array>().unwrap().value(j))
                 .collect();
@@ -171,9 +173,7 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
             let score: f64 = vector.iter().zip(embedding.iter()).map(|(x, y)| x * y).sum();
             output.push(env.cons(score, content)?);
             n_done += 1;
-            if n_done >= k { break }
         }
-        if n_done >= k { break }
     }
 
     Ok(env.vector(&output)?)
