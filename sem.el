@@ -66,22 +66,30 @@
   "Delete store NAME."
   (delete-directory (sem-store--path name) t))
 
-(defun sem-add-batch (store items embed-fn &optional write-fn)
+(defun sem-add-batch (store items embed-batch-fn &optional write-fn)
   "Add given ITEMS (list) to the STORE.
 
-WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
-used to convert the list of items to 2D vector."
+WRITE-FN defaults to `prin1' and is used for serialization.
+EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
   (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1) item)) items)))
-        (embeddings (funcall embed-fn items)))
+        (embeddings (funcall embed-batch-fn items)))
     (sem-core-add-batch store contents embeddings)))
+
+(defun sem-add (store item embed-fn &optional write-fn)
+  "Add one ITEM to the STORE.
+
+WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
+used to convert the item to a vector."
+  (sem-add-batch store (list item) (lambda (items)
+                                     (apply #'vector (mapcar #'embed-fn items)))
+                 write-fn))
 
 (defun sem-similar (store item k embed-fn &optional read-fn)
   "Return K items similar to ITEM from STORE.
 
-EMBED-FN is used to convert a list of items to 2D vector.  READ-FN
-defaults to `read' and is used to recover the emacs-lisp object back
-from the store."
-  (let ((results (sem-core-similar store (aref (funcall embed-fn (list item)) 0) k)))
+EMBED-FN is used to convert item to a vector.  READ-FN defaults to
+`read' and is used to recover the emacs-lisp object back from the store."
+  (let ((results (sem-core-similar store (funcall embed-fn item) k)))
     (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
 
 (provide 'sem)

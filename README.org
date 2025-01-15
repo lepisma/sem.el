@@ -16,10 +16,13 @@ are needed by ~sem-embed~.
   (setq sem-database-dir (expand-file-name "~/.emacs.d/sem/"))
   (setq sem-embed-model-path (expand-file-name "~/.emacs.d/sem/model_O2.onnx"))
 
-  (defun embed-fn (items)
+  (defun embed-batch-fn (items)
     "The embedding function that takes lisp objects and returns a 2D matrix
   of vectors (n-items x dim)."
     (sem-embed-default (apply #'vector (mapcar #'prin1 items))))
+
+  (defun embed-fn (item)
+    (aref (embed-batch-fn (list item)) 0))
 
   ;; The output dimension of default embedder from sem-embed is needed here
   (sem-store-new "ml-test" sem-embed-dim)
@@ -30,7 +33,7 @@ are needed by ~sem-embed~.
                      "this is an introduction"
                      "movies are bad"
                      "food is good")))
-    (sem-add-batch sem-store items #'embed-fn))
+    (sem-add-batch sem-store items #'embed-batch-fn))
 
   ;; #'identity is the read-fn which is used to load back the lisp object from
   ;; their string representation. By default the `sem-add' function uses `prin1'
