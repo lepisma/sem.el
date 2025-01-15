@@ -171,9 +171,9 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
             let score: f64 = vector.iter().zip(embedding.iter()).map(|(x, y)| x * y).sum();
             output.push(env.cons(score, content)?);
             n_done += 1;
-            if n_done > k { break }
+            if n_done >= k { break }
         }
-        if n_done > k { break }
+        if n_done >= k { break }
     }
 
     Ok(env.vector(&output)?)
