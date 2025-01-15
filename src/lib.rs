@@ -4,7 +4,7 @@ use emacs::{defun, Env, Value, Vector};
 use anyhow::{anyhow, Result};
 use arrow_array::{types::Float64Type, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use lancedb::query::ExecutableQuery;
+use lancedb::{query::ExecutableQuery, Connection};
 use futures_util::TryStreamExt;
 
 emacs::plugin_is_GPL_compatible!();
@@ -16,7 +16,25 @@ fn init(env: &Env) -> Result<Value<'_>> {
 
 struct Store {
     name: String,
-    db: lancedb::connection::Connection
+    dim: usize,
+    db: lancedb::connection::Connection,
+}
+
+fn get_vector_dim(db: &Connection, table_name: &String) -> Result<usize> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let schema = rt.block_on(async {
+        let table = db.open_table(table_name)
+            .execute().await
+            .unwrap();
+
+        table.schema().await.unwrap()
+    });
+    let f = schema.field_with_name("vector");
+    if let DataType::FixedSizeList(_, size) = f.unwrap().data_type() {
+        Ok(*size as usize)
+    } else {
+        Err(anyhow!("Unable to read dimension from the store"))
+    }
 }
 
 fn store_create(dir: &String, name: &String, emb_size: usize) -> Result<()> {
@@ -58,21 +76,20 @@ fn store_load(dir: String, name: String) -> Result<Store> {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let db = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
+    let dim = get_vector_dim(&db, &name)?;
 
-    Ok(Store { name, db, })
+    Ok(Store { name, dim, db, })
 }
 
 // Add given items in the store
 #[defun]
 fn add_batch<'a>(env: &'a Env, store: &mut Store, contents: Vector, embs: Vector) -> Result<()> {
     let n_items = embs.len();
-    // TODO: Get rid of this hardcoding
-    let dim = 384;
 
     let schema = Arc::new(Schema::new(vec![
         Field::new(
             "vector",
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), dim),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), store.dim as i32),
             true,
         ),
         Field::new(
@@ -89,7 +106,7 @@ fn add_batch<'a>(env: &'a Env, store: &mut Store, contents: Vector, embs: Vector
     let embs_vec: Vec<Option<Vec<Option<f64>>>> = (0..n_items)
         .map(|i| {
             let row = env.call("aref", (embs, i)).unwrap();
-            Some((0..dim).map(|j| Some(env.call("aref", (row, j)).unwrap().into_rust().unwrap())).collect::<Vec<_>>())
+            Some((0..store.dim).map(|j| Some(env.call("aref", (row, j)).unwrap().into_rust().unwrap())).collect::<Vec<_>>())
         })
         .collect::<Vec<_>>();
 
@@ -99,7 +116,7 @@ fn add_batch<'a>(env: &'a Env, store: &mut Store, contents: Vector, embs: Vector
                 schema.clone(),
                 vec![
                     Arc::new(
-                        FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(embs_vec, dim)
+                        FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(embs_vec, store.dim as i32)
                     ),
                     Arc::new(StringArray::from(contents_vec)),
                 ],
@@ -147,7 +164,6 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
 
     let mut output: Vec<Value> = Vec::with_capacity(k);
     let mut n_done: usize = 0;
-    let dim = 384;
 
     for batch in results.into_iter() {
         if n_done >= k { break }
@@ -161,7 +177,7 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
 
         for i in 0..batch.num_rows() {
             if n_done >= k { break }
-            let embedding: Vec<f64> = (0..dim)
+            let embedding: Vec<f64> = (0..store.dim)
                 .map(|j| embeddings.value(i).as_any().downcast_ref::<Float64Array>().unwrap().value(j))
                 .collect();
 
