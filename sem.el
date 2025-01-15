@@ -94,6 +94,10 @@ used to convert the item to a vector."
 This includes indexing un-indexed data, as needed."
   (sem-core-optimize store))
 
+(defun sem-items-count (store)
+  "Return total number of items in the STORE."
+  (sem-core-items-count store))
+
 (defun sem-delete-all (store)
   "Delete all data from the STORE."
   (sem-core-delete-all store))

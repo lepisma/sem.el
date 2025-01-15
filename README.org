@@ -42,3 +42,19 @@ are needed by ~sem-embed~.
   ;; ((0.33184681863908483 . "movies are bad") (0.25182008665115796 . "hello world"))
   ;; Output is a list of score, item pairs
 #+end_src
+
+In case you have added a lot of data, you might want to consider indexing the
+vectors for fast (and approximate) searches. Here is how you can do this:
+
+#+begin_src emacs-lisp
+  ;; All are sync functions in the current version
+
+  ;; This builds an index on the vectors
+  (sem-build-index store)
+
+  ;; Once you have added more new data, run re-indexing (and other optimizations)
+  (sem-optimize store)
+
+  ;; Check item counts with
+  (sem-items-count store)
+#+end_src

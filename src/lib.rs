@@ -176,6 +176,19 @@ fn add_batch<'a>(env: &'a Env, store: &mut Store, contents: Vector, embs: Vector
 }
 
 #[defun]
+fn items_count(store: &mut Store) -> Result<usize> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    Ok(rt.block_on(async {
+        let table = store.db.open_table(&store.name)
+            .execute().await
+            .unwrap();
+
+        table.count_rows(None).await.unwrap()
+    }))
+}
+
+#[defun]
 fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result<Value<'a>> {
     let vector: Vec<f64> = (0..emb.len())
         .map(|i| env.call("aref", (emb, i)).unwrap().into_rust().unwrap())
