@@ -84,6 +84,16 @@ used to convert the item to a vector."
                                      (apply #'vector (mapcar #'embed-fn items)))
                  write-fn))
 
+(defun sem-build-index (store)
+  "Build an index for faster retrieval via ANN on STORE."
+  (sem-core-build-index store))
+
+(defun sem-optimize (store)
+  "Run performance optimization routines on the STORE.
+
+This includes indexing un-indexed data, as needed."
+  (sem-core-optimize store))
+
 (defun sem-delete-all (store)
   "Delete all data from the STORE."
   (sem-core-delete-all store))

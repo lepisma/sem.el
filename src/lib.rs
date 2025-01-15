@@ -4,7 +4,7 @@ use emacs::{defun, Env, Value, Vector};
 use anyhow::{anyhow, Result};
 use arrow_array::{types::Float64Type, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use lancedb::{query::ExecutableQuery, Connection};
+use lancedb::{index::Index, query::ExecutableQuery, table::OptimizeAction, Connection};
 use futures_util::TryStreamExt;
 
 emacs::plugin_is_GPL_compatible!();
@@ -79,6 +79,39 @@ fn store_load(dir: String, name: String) -> Result<Store> {
     let dim = get_vector_dim(&db, &name)?;
 
     Ok(Store { name, dim, db, })
+}
+
+#[defun]
+fn build_index(store: &mut Store) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    rt.block_on(async {
+        let table = store.db.open_table(&store.name)
+            .execute().await
+            .unwrap();
+
+        // We only need to index vector as we don't find by `content` here.
+        table.create_index(&["vector"], Index::Auto)
+            .execute().await
+            .unwrap();
+    });
+
+    Ok(())
+}
+
+#[defun]
+fn optimize(store: &mut Store) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    rt.block_on(async {
+        let table = store.db.open_table(&store.name)
+            .execute().await
+            .unwrap();
+
+        table.optimize(OptimizeAction::All).await.unwrap();
+    });
+
+    Ok(())
 }
 
 // Add given items in the store
