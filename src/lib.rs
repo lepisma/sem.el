@@ -37,7 +37,7 @@ fn get_vector_dim(db: &Connection, table_name: &String) -> Result<usize> {
     }
 }
 
-fn store_create(dir: &String, name: &String, emb_size: usize) -> Result<()> {
+fn store_create(dir: &String, name: &String, dim: usize) -> Result<()> {
     let db_path = path::Path::new(dir).join(name);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -46,7 +46,7 @@ fn store_create(dir: &String, name: &String, emb_size: usize) -> Result<()> {
     let schema = Arc::new(Schema::new(vec![
         Field::new(
             "vector",
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), emb_size as i32),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), dim as i32),
             true,
         ),
         Field::new(
@@ -62,8 +62,8 @@ fn store_create(dir: &String, name: &String, emb_size: usize) -> Result<()> {
 }
 
 #[defun(user_ptr)]
-fn store_new(dir: String, name: String, emb_size: usize) -> Result<Store> {
-    if let Ok(_whatever)= store_create(&dir, &name, emb_size) {
+fn store_new(dir: String, name: String, dim: usize) -> Result<Store> {
+    if let Ok(_whatever)= store_create(&dir, &name, dim) {
         store_load(dir, name)
     } else {
         Err(anyhow!("Unable to create store {}", name))

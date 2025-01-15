@@ -46,13 +46,13 @@
       (error "`sem-database-dir' is not set")
     (file-exists-p (sem-store--path name))))
 
-(defun sem-store-new (name emb-size)
-  "Create a new sem store NAME with vectors of dim EMB-SIZE."
+(defun sem-store-new (name dim)
+  "Create a new sem store NAME with vectors of dimension DIM."
   (if (not sem-database-dir)
       (error "`sem-database-dir' is not set")
     (if (sem-store-present-p name)
         (error "Store %s already exists" name)
-      (sem-core-store-new sem-database-dir name emb-size))))
+      (sem-core-store-new sem-database-dir name dim))))
 
 (defun sem-store-load (name)
   "Load an existing store NAME and return."
