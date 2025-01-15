@@ -1,11 +1,10 @@
-use std::{fmt::Debug, fs::File, io::{Read, Write}, ops::BitOr, path, sync::Arc};
+use std::{path, sync::Arc};
 
-use emacs::{defun, Env, IntoLisp, Value, Vector};
+use emacs::{defun, Env, Value, Vector};
 use anyhow::{anyhow, Result};
-use arrow_array::{builder::Float64BufferBuilder, types::{Float32Type, Float64Type}, Datum, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_array::{types::Float64Type, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use lancedb::query::ExecutableQuery;
-use lancedb::index::Index;
 use futures_util::TryStreamExt;
 
 emacs::plugin_is_GPL_compatible!();
@@ -177,4 +176,20 @@ fn similar<'a>(env: &'a Env, store: &mut Store, emb: Vector, k: usize) -> Result
     }
 
     Ok(env.vector(&output)?)
+}
+
+// Delete all items from the store
+#[defun]
+fn delete_all(store: &mut Store) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    rt.block_on(async {
+        let table = store.db.open_table(&store.name)
+            .execute().await
+            .unwrap();
+
+        table.delete("1 = 1").await.unwrap();
+    });
+
+    Ok(())
 }

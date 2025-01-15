@@ -84,6 +84,10 @@ used to convert the item to a vector."
                                      (apply #'vector (mapcar #'embed-fn items)))
                  write-fn))
 
+(defun sem-delete-all (store)
+  "Delete all data from the STORE."
+  (sem-core-delete-all store))
+
 (defun sem-similar (store item k embed-fn &optional read-fn)
   "Return K items similar to ITEM from STORE.
 
