@@ -97,7 +97,7 @@ EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
 WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
 used to convert the item to a vector."
   (sem-add-batch store (list item) (lambda (items)
-                                     (apply #'vector (mapcar #'embed-fn items)))
+                                     (apply #'vector (mapcar embed-fn items)))
                  write-fn))
 
 (defun sem-build-index (store)
