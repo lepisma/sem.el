@@ -33,7 +33,7 @@ needed by ~sem-embed~ to generate embeddings.
   (defun embed-batch-fn (items)
     "The embedding function that takes lisp objects and returns a 2D matrix
   of vectors (n-items x dim)."
-    (sem-embed-default (apply #'vector (mapcar #'prin1 items))))
+    (sem-embed-default (apply #'vector (mapcar #'prin1-to-string items))))
 
   (defun embed-fn (item)
     (aref (embed-batch-fn (list item)) 0))

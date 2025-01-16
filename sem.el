@@ -85,17 +85,17 @@
 (defun sem-add-batch (store items embed-batch-fn &optional write-fn)
   "Add given ITEMS (list) to the STORE.
 
-WRITE-FN defaults to `prin1' and is used for serialization.
+WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
-  (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1) item)) items)))
+  (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1-to-string) item)) items)))
         (embeddings (funcall embed-batch-fn items)))
     (sem-core-add-batch store contents embeddings)))
 
 (defun sem-add (store item embed-fn &optional write-fn)
   "Add one ITEM to the STORE.
 
-WRITE-FN defaults to `prin1' and is used for serialization.  EMBED-FN is
-used to convert the item to a vector."
+WRITE-FN defaults to `prin1-to-string' and is used for serialization.
+EMBED-FN is used to convert the item to a vector."
   (sem-add-batch store (list item) (lambda (items)
                                      (apply #'vector (mapcar embed-fn items)))
                  write-fn))
