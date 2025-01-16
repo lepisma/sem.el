@@ -1,7 +1,7 @@
-all: sem-core.so
+release: sem-core.so
 
-sem-core.so: ./target/debug/libsem_el.so
-	cp ./target/debug/libsem_el.so sem-core.so
+sem-core.so: ./target/release/libsem_el.so
+	cp ./target/release/libsem_el.so sem-core.so
 
-./target/debug/libsem_el.so: ./src/lib.rs
-	cargo build
+./target/release/libsem_el.so: ./src/lib.rs
+	cargo build --release

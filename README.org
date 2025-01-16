@@ -1,11 +1,25 @@
 #+TITLE: sem.el
 
-Local semantic indexing and search for Emacs. This is a work in progress as of
-now.
+Local semantic indexing and search for Emacs.
 
-* Usage
-The example below needs you to have [[https://github.com/lepisma/tokenizers.el][tokenizers.el]] and [[https://github.com/lepisma/onnx.el][onnx.el]] installed as they
-are needed by ~sem-embed~.
+* Installation and Usage
+There is a dynamic module that needs cargo installed for building. This module
+is automatically compiled when you install the package using something like
+this:
+
+#+begin_src emacs-lisp
+(use-package sem
+  :vc (:fetcher github :repo lepisma/sem.el)
+  :demand t)
+#+end_src
+
+Note that this method only handles creating ~.so~ files which means it won’t work
+on non-Linux systems yet. For other systems, manually inspect the ~Makefile~ and
+compile the module yourself.
+
+Once built and installed, you can use it like the following. Note that the
+example below needs you to have [[https://github.com/lepisma/tokenizers.el][tokenizers.el]] and [[https://github.com/lepisma/onnx.el][onnx.el]] installed as they are
+needed by ~sem-embed~ to generate embeddings.
 
 #+begin_src emacs-lisp
   (require 'sem)

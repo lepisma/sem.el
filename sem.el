@@ -30,7 +30,23 @@
 
 ;;; Code:
 
-(require 'sem-core)
+(require 'cl-macs)
+
+(cl-eval-when (load eval)
+  (unless (require 'sem-core nil t)
+    (if (or noninteractive
+            (yes-or-no-p "Module sem-core must be built.  Do so now? "))
+        (let ((default-directory (file-name-directory (or load-file-name
+                                                          buffer-file-name)))
+              (build-command "make release"))
+
+          (message "Building sem-core module with %S" build-command)
+          (with-temp-buffer
+            (unless (zerop (call-process-shell-command build-command nil t t))
+              (error "Failed to compile module sem-core: %s" (buffer-substring-no-properties (point-min) (point-max)))))
+          (message "Loading sem-core")
+          (require 'sem-core))
+      (user-error "Abort compilation for sem-core"))))
 
 (defcustom sem-database-dir nil
   "Directory where sem will keep all indices and data."
