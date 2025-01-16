@@ -56,12 +56,12 @@
     (setq sem-embed-model (onnx-load sem-embed-model-path))
     sem-embed-model))
 
-(defun sem-embed-default (items)
+(defun sem-embed-default (items &optional write-fn)
   "Default embedding function for ITEMS.
 
-This serializes the items via prin1 and embeds using the default
-all-MiniLM-L6-v2 model."
-  (let* ((string-reps (apply #'vector (mapcar #'prin1 items)))
+This serializes the items via write-fn (defaults to prin1-to-string) and
+embeds using the all-MiniLM-L6-v2 model."
+  (let* ((string-reps (apply #'vector (mapcar (or write-fn #'prin1-to-string) items)))
          (encodings (tokenizers-encode-batch (or sem-embed-tokenizer (sem-embed-load-tokenizer)) string-reps t))
          (output (onnx-run (or sem-embed-model (sem-embed-load-model)) `(("input_ids" . ,(nth 0 encodings))
                                                                          ("token_type_ids" . ,(nth 1 encodings))
