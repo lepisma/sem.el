@@ -255,3 +255,8 @@ fn delete_all(db: &mut Database) -> Result<()> {
 
     Ok(())
 }
+
+#[defun]
+fn db_name(db: &mut Database) -> Result<String> {
+    Ok(db.name.clone())
+}
