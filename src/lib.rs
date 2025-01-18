@@ -96,7 +96,14 @@ fn table_new(db: &mut Database, table_name: String, dim: usize) -> Result<()> {
         )
     ]));
 
-    rt.block_on(db.connection.create_empty_table(table_name, schema).execute())?;
+    rt.block_on(async {
+        let table = db.connection.create_empty_table(table_name, schema).execute().await.unwrap();
+        // Creating a default index on content for operations that match items
+        // before insertion
+        table.create_index(&["content"], Index::Auto)
+            .execute().await
+            .unwrap();
+    });
 
     Ok(())
 }
