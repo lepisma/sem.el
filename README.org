@@ -72,3 +72,23 @@ vectors for fast (and approximate) searches. Here is how you can do this:
   ;; Check item counts with
   (sem-items-count sem-db)
 #+end_src
+
+** Multiple tables
+On creation of a new database, the package automatically creates a default table
+(see ~sem-default-table-name~) which is used for all of the examples shown
+above. In case you want to store many tables in one database, here is how you
+can do so:
+
+#+begin_src emacs-lisp
+  ;; You can check if a table is already present
+  (sem-table-present-p sem-db table-name)
+
+  (sem-table-new sem-db table-name dim)
+  ;; After creation, you can pass table-name as optional parameter in all
+  ;; operations where it makes sense. Here are a few examples, check function
+  ;; docstrings for more.
+  (sem-build-index sem-db table-name)
+
+  ;; In case you want to delete a table
+  (sem-table-delete sem-db table-name)
+#+end_src

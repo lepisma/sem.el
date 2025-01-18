@@ -92,49 +92,66 @@
 (defalias 'sem-table-delete #'sem-core-table-delete)
 (defalias 'sem-table-dim #'sem-core-table-dim)
 
-(defun sem-add-batch (db items embed-batch-fn &optional write-fn)
+(defun sem-add-batch (db items embed-batch-fn &optional write-fn table-name)
   "Add given ITEMS (list) to DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
-EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
+EMBED-BATCH-FN is used to convert the list of items to 2D matrix.
+TABLE-NAME defaults to the main table but can be changed if you are
+keeping multiple tables in a database."
   (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1-to-string) item)) items)))
         (embeddings (funcall embed-batch-fn items)))
-    (sem-core-add-batch db sem-default-table-name contents embeddings)))
+    (sem-core-add-batch db (or table-name sem-default-table-name) contents embeddings)))
 
-(defun sem-add (db item embed-fn &optional write-fn)
+(defun sem-add (db item embed-fn &optional write-fn table-name)
   "Add one ITEM to the DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
-EMBED-FN is used to convert the item to a vector."
-  (sem-add-batch db sem-default-table-name
+EMBED-FN is used to convert the item to a vector.  TABLE-NAME defaults
+to the main table but can be changed if you are keeping multiple tables
+in a database."
+  (sem-add-batch db (or table-name sem-default-table-name)
                  (list item) (lambda (items)
                                (apply #'vector (mapcar embed-fn items)))
                  write-fn))
 
-(defun sem-build-index (db)
-  "Build an index for faster retrieval via ANN on DB."
-  (sem-core-build-index db sem-default-table-name))
+(defun sem-build-index (db &optional table-name)
+  "Build an index for faster retrieval via ANN on DB.
 
-(defun sem-optimize (db)
+TABLE-NAME defaults to the main table but can be changed if you are
+keeping multiple tables in a database."
+  (sem-core-build-index db (or table-name sem-default-table-name)))
+
+(defun sem-optimize (db &optional table-name)
   "Run performance optimization routines on the DB.
 
-This includes indexing un-indexed data, as needed."
-  (sem-core-optimize db sem-default-table-name))
+This includes indexing un-indexed data, as needed.  TABLE-NAME defaults
+to the main table but can be changed if you are keeping multiple tables
+in a database."
+  (sem-core-optimize db (or table-name sem-default-table-name)))
 
-(defun sem-items-count (db)
-  "Return total number of items in the DB."
-  (sem-core-items-count db sem-default-table-name))
+(defun sem-items-count (db &optional table-name)
+  "Return total number of items in the DB.
 
-(defun sem-delete-all (db)
-  "Delete all data from the DB."
-  (sem-core-delete-all db sem-default-table-name))
+TABLE-NAME defaults to the main table but can be changed if you are
+keeping multiple tables in a database."
+  (sem-core-items-count db (or table-name sem-default-table-name)))
 
-(defun sem-similar (db item k embed-fn &optional read-fn)
+(defun sem-delete-all (db &optional table-name)
+  "Delete all data from the DB.
+
+TABLE-NAME defaults to the main table but can be changed if you are
+keeping multiple tables in a database."
+  (sem-core-delete-all db (or table-name sem-default-table-name)))
+
+(defun sem-similar (db item k embed-fn &optional read-fn table-name)
   "Return K items similar to ITEM from DB.
 
 EMBED-FN is used to convert item to a vector.  READ-FN defaults to
-`read' and is used to recover the emacs-lisp object back from the db."
-  (let ((results (sem-core-similar db sem-default-table-name (funcall embed-fn item) k)))
+`read' and is used to recover the emacs-lisp object back from the db.
+TABLE-NAME defaults to the main table but can be changed if you are
+keeping multiple tables in a database."
+  (let ((results (sem-core-similar db (or table-name sem-default-table-name) (funcall embed-fn item) k)))
     (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
 
 (provide 'sem)
