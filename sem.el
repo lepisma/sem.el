@@ -52,6 +52,10 @@
   "Directory where sem will keep all data and indices."
   :type 'string)
 
+(defcustom sem-default-table-name "main"
+  "Name of the default table to be created in any sem database."
+  :type 'string)
+
 (defun sem-db--path (name)
   "Return path on the file system for the given db NAME."
   (concat (file-name-as-directory sem-data-dir) name))
@@ -63,12 +67,13 @@
     (file-exists-p (sem-db--path name))))
 
 (defun sem-db-new (name dim)
-  "Create a new sem db NAME with vectors of dimension DIM."
+  "Create a new sem db NAME with default table of dimension DIM."
   (if (not sem-data-dir)
       (error "`sem-data-dir' is not set")
     (if (sem-db-present-p name)
         (error "Database %s already exists" name)
-      (sem-core-db-new sem-data-dir name dim))))
+      (let ((db (sem-core-db-new sem-data-dir name)))
+        (sem-table-new db sem-default-table-name dim)))))
 
 (defun sem-db-load (name)
   "Load an existing db NAME and return."
@@ -82,48 +87,54 @@
   "Delete db NAME."
   (delete-directory (sem-db--path name) t))
 
+(defalias 'sem-table-new #'sem-core-table-new)
+(defalias 'sem-table-present-p #'sem-core-table-present-p)
+(defalias 'sem-table-delete #'sem-core-table-delete)
+(defalias 'sem-table-dim #'sem-core-table-dim)
+
 (defun sem-add-batch (db items embed-batch-fn &optional write-fn)
-  "Add given ITEMS (list) to the DB.
+  "Add given ITEMS (list) to DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
   (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1-to-string) item)) items)))
         (embeddings (funcall embed-batch-fn items)))
-    (sem-core-add-batch db contents embeddings)))
+    (sem-core-add-batch db sem-default-table-name contents embeddings)))
 
 (defun sem-add (db item embed-fn &optional write-fn)
   "Add one ITEM to the DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-FN is used to convert the item to a vector."
-  (sem-add-batch db (list item) (lambda (items)
-                                  (apply #'vector (mapcar embed-fn items)))
+  (sem-add-batch db sem-default-table-name
+                 (list item) (lambda (items)
+                               (apply #'vector (mapcar embed-fn items)))
                  write-fn))
 
 (defun sem-build-index (db)
   "Build an index for faster retrieval via ANN on DB."
-  (sem-core-build-index db))
+  (sem-core-build-index db sem-default-table-name))
 
 (defun sem-optimize (db)
   "Run performance optimization routines on the DB.
 
 This includes indexing un-indexed data, as needed."
-  (sem-core-optimize db))
+  (sem-core-optimize db sem-default-table-name))
 
 (defun sem-items-count (db)
   "Return total number of items in the DB."
-  (sem-core-items-count db))
+  (sem-core-items-count db sem-default-table-name))
 
 (defun sem-delete-all (db)
   "Delete all data from the DB."
-  (sem-core-delete-all db))
+  (sem-core-delete-all db sem-default-table-name))
 
 (defun sem-similar (db item k embed-fn &optional read-fn)
   "Return K items similar to ITEM from DB.
 
 EMBED-FN is used to convert item to a vector.  READ-FN defaults to
 `read' and is used to recover the emacs-lisp object back from the db."
-  (let ((results (sem-core-similar db (funcall embed-fn item) k)))
+  (let ((results (sem-core-similar db sem-default-table-name (funcall embed-fn item) k)))
     (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
 
 (provide 'sem)

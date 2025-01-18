@@ -4,7 +4,7 @@ use emacs::{defun, Env, Value, Vector};
 use anyhow::{anyhow, Result};
 use arrow_array::{types::Float64Type, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use lancedb::{index::Index, query::ExecutableQuery, table::OptimizeAction, Connection};
+use lancedb::{index::Index, query::ExecutableQuery, table::OptimizeAction};
 use futures_util::TryStreamExt;
 
 emacs::plugin_is_GPL_compatible!();
@@ -17,13 +17,12 @@ fn init(env: &Env) -> Result<Value<'_>> {
 struct Database {
     name: String,
     connection: lancedb::connection::Connection,
-    dim: usize,
 }
 
-fn get_vector_dim(connection: &Connection, table_name: &String) -> Result<usize> {
+fn get_table_dim(db: &mut Database, table_name: &String) -> Result<usize> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let schema = rt.block_on(async {
-        let table = connection.open_table(table_name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
@@ -33,16 +32,43 @@ fn get_vector_dim(connection: &Connection, table_name: &String) -> Result<usize>
     if let DataType::FixedSizeList(_, size) = f.unwrap().data_type() {
         Ok(*size as usize)
     } else {
-        Err(anyhow!("Unable to read dimension from the database"))
+        Err(anyhow!("Unable to read dimension from {} for table: {}", db.name, table_name))
     }
 }
 
-fn db_create(dir: &String, name: &String, dim: usize) -> Result<()> {
+fn db_create(dir: &String, name: &String) -> Result<()> {
     let db_path = path::Path::new(dir).join(name);
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
+
+    Ok(())
+}
+
+#[defun(user_ptr)]
+fn db_new(dir: String, name: String) -> Result<Database> {
+    if let Ok(_whatever)= db_create(&dir, &name) {
+        db_load(dir, name)
+    } else {
+        Err(anyhow!("Unable to create database {}", name))
+    }
+}
+
+#[defun(user_ptr)]
+fn db_load(dir: String, name: String) -> Result<Database> {
+    let db_path = path::Path::new(&dir).join(&name);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let connection = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
 
+    Ok(Database { name, connection, })
+}
+
+// Create a new table for storing string content mapping to vector
+// representation
+#[defun]
+fn table_new(db: &mut Database, table_name: String, dim: usize) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
     let schema = Arc::new(Schema::new(vec![
         Field::new(
             "vector",
@@ -56,37 +82,43 @@ fn db_create(dir: &String, name: &String, dim: usize) -> Result<()> {
         )
     ]));
 
-    rt.block_on(connection.create_empty_table(name, schema).execute())?;
+    rt.block_on(db.connection.create_empty_table(table_name, schema).execute())?;
 
     Ok(())
 }
 
-#[defun(user_ptr)]
-fn db_new(dir: String, name: String, dim: usize) -> Result<Database> {
-    if let Ok(_whatever)= db_create(&dir, &name, dim) {
-        db_load(dir, name)
-    } else {
-        Err(anyhow!("Unable to create database {}", name))
-    }
+#[defun]
+fn table_present_p(db: &mut Database, table_name: String) -> Result<bool> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let table_names = rt.block_on(async {
+        db.connection.table_names().execute().await.unwrap()
+    });
+
+    Ok(table_names.contains(&table_name))
 }
 
-#[defun(user_ptr)]
-fn db_load(dir: String, name: String) -> Result<Database> {
-    let db_path = path::Path::new(&dir).join(&name);
-
+// Delete the table
+#[defun]
+fn table_delete(db: &mut Database, table_name: String) -> Result<()> {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let connection = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
-    let dim = get_vector_dim(&connection, &name)?;
+    rt.block_on(async {
+        db.connection.drop_table(table_name).await.unwrap();
+    });
+    Ok(())
+}
 
-    Ok(Database { name, connection, dim, })
+// Return dimension of vectors that this table handles
+#[defun]
+fn table_dim(db: &mut Database, table_name: String) -> Result<usize> {
+    get_table_dim(db, &table_name)
 }
 
 #[defun]
-fn build_index(db: &mut Database) -> Result<()> {
+fn build_index(db: &mut Database, table_name: String) -> Result<()> {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     rt.block_on(async {
-        let table = db.connection.open_table(&db.name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
@@ -100,11 +132,11 @@ fn build_index(db: &mut Database) -> Result<()> {
 }
 
 #[defun]
-fn optimize(db: &mut Database) -> Result<()> {
+fn optimize(db: &mut Database, table_name: String) -> Result<()> {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     rt.block_on(async {
-        let table = db.connection.open_table(&db.name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
@@ -116,13 +148,14 @@ fn optimize(db: &mut Database) -> Result<()> {
 
 // Add given items in the store
 #[defun]
-fn add_batch<'a>(env: &'a Env, db: &mut Database, contents: Vector, embs: Vector) -> Result<()> {
+fn add_batch<'a>(env: &'a Env, db: &mut Database, table_name: String, contents: Vector, embs: Vector) -> Result<()> {
     let n_items = embs.len();
+    let dim = get_table_dim(db, &table_name)?;
 
     let schema = Arc::new(Schema::new(vec![
         Field::new(
             "vector",
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), db.dim as i32),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), dim as i32),
             true,
         ),
         Field::new(
@@ -139,7 +172,7 @@ fn add_batch<'a>(env: &'a Env, db: &mut Database, contents: Vector, embs: Vector
     let embs_vec: Vec<Option<Vec<Option<f64>>>> = (0..n_items)
         .map(|i| {
             let row = env.call("aref", (embs, i)).unwrap();
-            Some((0..db.dim).map(|j| Some(env.call("aref", (row, j)).unwrap().into_rust().unwrap())).collect::<Vec<_>>())
+            Some((0..dim).map(|j| Some(env.call("aref", (row, j)).unwrap().into_rust().unwrap())).collect::<Vec<_>>())
         })
         .collect::<Vec<_>>();
 
@@ -149,7 +182,7 @@ fn add_batch<'a>(env: &'a Env, db: &mut Database, contents: Vector, embs: Vector
                 schema.clone(),
                 vec![
                     Arc::new(
-                        FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(embs_vec, db.dim as i32)
+                        FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(embs_vec, dim as i32)
                     ),
                     Arc::new(StringArray::from(contents_vec)),
                 ],
@@ -163,7 +196,7 @@ fn add_batch<'a>(env: &'a Env, db: &mut Database, contents: Vector, embs: Vector
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let table = db.connection.open_table(&db.name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
@@ -176,11 +209,11 @@ fn add_batch<'a>(env: &'a Env, db: &mut Database, contents: Vector, embs: Vector
 }
 
 #[defun]
-fn items_count(db: &mut Database) -> Result<usize> {
+fn items_count(db: &mut Database, table_name: String) -> Result<usize> {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     Ok(rt.block_on(async {
-        let table = db.connection.open_table(&db.name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
@@ -189,14 +222,16 @@ fn items_count(db: &mut Database) -> Result<usize> {
 }
 
 #[defun]
-fn similar<'a>(env: &'a Env, db: &mut Database, emb: Vector, k: usize) -> Result<Value<'a>> {
+fn similar<'a>(env: &'a Env, db: &mut Database, table_name: String, emb: Vector, k: usize) -> Result<Value<'a>> {
     let vector: Vec<f64> = (0..emb.len())
         .map(|i| env.call("aref", (emb, i)).unwrap().into_rust().unwrap())
         .collect::<Vec<_>>();
 
+    let dim = get_table_dim(db, &table_name)?;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
-        db.connection.open_table(&db.name)
+        db.connection.open_table(table_name)
             .execute().await
             .unwrap()
             .query()
@@ -223,7 +258,7 @@ fn similar<'a>(env: &'a Env, db: &mut Database, emb: Vector, k: usize) -> Result
 
         for i in 0..batch.num_rows() {
             if n_done >= k { break }
-            let embedding: Vec<f64> = (0..db.dim)
+            let embedding: Vec<f64> = (0..dim)
                 .map(|j| embeddings.value(i).as_any().downcast_ref::<Float64Array>().unwrap().value(j))
                 .collect();
 
@@ -240,13 +275,13 @@ fn similar<'a>(env: &'a Env, db: &mut Database, emb: Vector, k: usize) -> Result
     Ok(env.vector(&output)?)
 }
 
-// Delete all items from the store
+// Delete all items from given table
 #[defun]
-fn delete_all(db: &mut Database) -> Result<()> {
+fn delete_all(db: &mut Database, table_name: String) -> Result<()> {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     rt.block_on(async {
-        let table = db.connection.open_table(&db.name)
+        let table = db.connection.open_table(table_name)
             .execute().await
             .unwrap();
 
