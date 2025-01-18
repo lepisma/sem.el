@@ -3,7 +3,7 @@
 ;; Copyright (c) 2025 Abhinav Tushar
 
 ;; Author: Abhinav Tushar <abhinav@lepisma.xyz>
-;; Version: 0.4.0
+;; Version: 0.4.1
 ;; Package-Requires: ((emacs "29"))
 ;; Keywords: tools, search, ml
 ;; URL: https://github.com/lepisma/sem.el
