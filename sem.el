@@ -93,28 +93,29 @@
 (defalias 'sem-table-delete #'sem-core-table-delete)
 (defalias 'sem-table-dim #'sem-core-table-dim)
 
-(defun sem-add-batch (db items embed-batch-fn &optional write-fn table-name)
+(defun sem-add-batch (db items embed-batch-fn &optional write-fn table-name do-upsert)
   "Add given ITEMS (list) to DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-BATCH-FN is used to convert the list of items to 2D matrix.
 TABLE-NAME defaults to the main table but can be changed if you are
-keeping multiple tables in a database."
+keeping multiple tables in a database.  If DO-UPSERT is true, do an
+upsert operation (matching on string-representation)."
   (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1-to-string) item)) items)))
         (embeddings (funcall embed-batch-fn items)))
-    (sem-core-add-batch db (or table-name sem-default-table-name) contents embeddings)))
+    (sem-core-add-batch db (or table-name sem-default-table-name) contents embeddings do-upsert)))
 
-(defun sem-add (db item embed-fn &optional write-fn table-name)
+(defun sem-add (db item embed-fn &optional write-fn table-name do-upsert)
   "Add one ITEM to the DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-FN is used to convert the item to a vector.  TABLE-NAME defaults
 to the main table but can be changed if you are keeping multiple tables
-in a database."
-  (sem-add-batch db (or table-name sem-default-table-name)
-                 (list item) (lambda (items)
-                               (apply #'vector (mapcar embed-fn items)))
-                 write-fn))
+in a database.  If DO-UPSERT is true, do an upsert operation (matching
+on string-representation)."
+  (sem-add-batch db (list item) (lambda (items)
+                                  (apply #'vector (mapcar embed-fn items)))
+                 write-fn (or table-name sem-default-table-name) do-upsert))
 
 (defun sem-build-index (db &optional table-name)
   "Build an index for faster retrieval via ANN on DB.

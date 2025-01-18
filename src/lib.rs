@@ -169,7 +169,7 @@ fn optimize(db: &mut Database, table_name: String) -> Result<()> {
 
 // Add given items in the store
 #[defun]
-fn add_batch<'a>(env: &'a Env, db: &mut Database, table_name: String, contents: Vector, embs: Vector) -> Result<()> {
+fn add_batch<'a>(env: &'a Env, db: &mut Database, table_name: String, contents: Vector, embs: Vector, do_upsert: Value) -> Result<()> {
     let n_items = embs.len();
     let dim = get_table_dim(db, &table_name)?;
 
@@ -221,9 +221,17 @@ fn add_batch<'a>(env: &'a Env, db: &mut Database, table_name: String, contents: 
             .execute().await
             .unwrap();
 
-        table.add(batches)
-            .execute().await
-            .unwrap();
+        if do_upsert.eq(env.intern("t").unwrap()) {
+            let mut merge_insert = table.merge_insert(&["content"]);
+            merge_insert
+                .when_matched_update_all(None)
+                .when_not_matched_insert_all();
+            merge_insert.execute(Box::new(batches)).await.unwrap();
+        } else {
+            table.add(batches)
+                .execute().await
+                .unwrap();
+        }
     });
 
     Ok(())
