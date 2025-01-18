@@ -87,6 +87,7 @@
   "Delete db NAME."
   (delete-directory (sem-db--path name) t))
 
+(defalias 'sem-table-list #'sem-core-table-list)
 (defalias 'sem-table-new #'sem-core-table-new)
 (defalias 'sem-table-present-p #'sem-core-table-present-p)
 (defalias 'sem-table-delete #'sem-core-table-delete)

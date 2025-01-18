@@ -83,6 +83,9 @@ can do so:
   ;; You can check if a table is already present
   (sem-table-present-p sem-db table-name)
 
+  ;; Also here is how to list all tables
+  (sem-table-list sem-db)
+
   (sem-table-new sem-db table-name dim)
   ;; After creation, you can pass table-name as optional parameter in all
   ;; operations where it makes sense. Here are a few examples, check function

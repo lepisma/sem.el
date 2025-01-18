@@ -1,6 +1,6 @@
 use std::{path, sync::Arc};
 
-use emacs::{defun, Env, Value, Vector};
+use emacs::{defun, Env, IntoLisp, Value, Vector};
 use anyhow::{anyhow, Result};
 use arrow_array::{types::Float64Type, FixedSizeListArray, Float64Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema};
@@ -62,6 +62,20 @@ fn db_load(dir: String, name: String) -> Result<Database> {
     let connection = rt.block_on(lancedb::connect(db_path.to_str().unwrap()).execute())?;
 
     Ok(Database { name, connection, })
+}
+
+#[defun]
+fn table_list<'a>(env: &'a Env, db: &mut Database) -> Result<Value<'a>> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let table_names = rt.block_on(async {
+        db.connection.table_names().execute().await.unwrap()
+    });
+
+    Ok(env.list(&table_names
+        .iter()
+        .map(|it| it.into_lisp(env))
+        .collect::<Result<Vec<_>>>()?
+    )?)
 }
 
 // Create a new table for storing string content mapping to vector
