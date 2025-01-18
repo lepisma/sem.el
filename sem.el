@@ -48,82 +48,82 @@
           (require 'sem-core))
       (user-error "Abort compilation for sem-core"))))
 
-(defcustom sem-database-dir nil
-  "Directory where sem will keep all indices and data."
+(defcustom sem-data-dir nil
+  "Directory where sem will keep all data and indices."
   :type 'string)
 
-(defun sem-store--path (name)
-  "Return path on the file system for the given store NAME."
-  (concat (file-name-as-directory sem-database-dir) name))
+(defun sem-db--path (name)
+  "Return path on the file system for the given db NAME."
+  (concat (file-name-as-directory sem-data-dir) name))
 
-(defun sem-store-present-p (name)
-  "Return whether a store with NAME is already present."
-  (if (not sem-database-dir)
-      (error "`sem-database-dir' is not set")
-    (file-exists-p (sem-store--path name))))
+(defun sem-db-present-p (name)
+  "Return whether a db with NAME is already present."
+  (if (not sem-data-dir)
+      (error "`sem-data-dir' is not set")
+    (file-exists-p (sem-db--path name))))
 
-(defun sem-store-new (name dim)
-  "Create a new sem store NAME with vectors of dimension DIM."
-  (if (not sem-database-dir)
-      (error "`sem-database-dir' is not set")
-    (if (sem-store-present-p name)
-        (error "Store %s already exists" name)
-      (sem-core-store-new sem-database-dir name dim))))
+(defun sem-db-new (name dim)
+  "Create a new sem db NAME with vectors of dimension DIM."
+  (if (not sem-data-dir)
+      (error "`sem-data-dir' is not set")
+    (if (sem-db-present-p name)
+        (error "Database %s already exists" name)
+      (sem-core-db-new sem-data-dir name dim))))
 
-(defun sem-store-load (name)
-  "Load an existing store NAME and return."
-  (if (not sem-database-dir)
-      (error "`sem-database-dir' is not set")
-    (if (sem-store-present-p name)
-        (sem-core-store-load sem-database-dir name)
-      (error "Store %s doesn't exist" name))))
+(defun sem-db-load (name)
+  "Load an existing db NAME and return."
+  (if (not sem-data-dir)
+      (error "`sem-data-dir' is not set")
+    (if (sem-db-present-p name)
+        (sem-core-db-load sem-data-dir name)
+      (error "Database %s doesn't exist" name))))
 
-(defun sem-store-delete (name)
-  "Delete store NAME."
-  (delete-directory (sem-store--path name) t))
+(defun sem-db-delete (name)
+  "Delete db NAME."
+  (delete-directory (sem-db--path name) t))
 
-(defun sem-add-batch (store items embed-batch-fn &optional write-fn)
-  "Add given ITEMS (list) to the STORE.
+(defun sem-add-batch (db items embed-batch-fn &optional write-fn)
+  "Add given ITEMS (list) to the DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-BATCH-FN is used to convert the list of items to 2D matrix."
   (let ((contents (apply #'vector (mapcar (lambda (item) (funcall (or write-fn #'prin1-to-string) item)) items)))
         (embeddings (funcall embed-batch-fn items)))
-    (sem-core-add-batch store contents embeddings)))
+    (sem-core-add-batch db contents embeddings)))
 
-(defun sem-add (store item embed-fn &optional write-fn)
-  "Add one ITEM to the STORE.
+(defun sem-add (db item embed-fn &optional write-fn)
+  "Add one ITEM to the DB.
 
 WRITE-FN defaults to `prin1-to-string' and is used for serialization.
 EMBED-FN is used to convert the item to a vector."
-  (sem-add-batch store (list item) (lambda (items)
-                                     (apply #'vector (mapcar embed-fn items)))
+  (sem-add-batch db (list item) (lambda (items)
+                                  (apply #'vector (mapcar embed-fn items)))
                  write-fn))
 
-(defun sem-build-index (store)
-  "Build an index for faster retrieval via ANN on STORE."
-  (sem-core-build-index store))
+(defun sem-build-index (db)
+  "Build an index for faster retrieval via ANN on DB."
+  (sem-core-build-index db))
 
-(defun sem-optimize (store)
-  "Run performance optimization routines on the STORE.
+(defun sem-optimize (db)
+  "Run performance optimization routines on the DB.
 
 This includes indexing un-indexed data, as needed."
-  (sem-core-optimize store))
+  (sem-core-optimize db))
 
-(defun sem-items-count (store)
-  "Return total number of items in the STORE."
-  (sem-core-items-count store))
+(defun sem-items-count (db)
+  "Return total number of items in the DB."
+  (sem-core-items-count db))
 
-(defun sem-delete-all (store)
-  "Delete all data from the STORE."
-  (sem-core-delete-all store))
+(defun sem-delete-all (db)
+  "Delete all data from the DB."
+  (sem-core-delete-all db))
 
-(defun sem-similar (store item k embed-fn &optional read-fn)
-  "Return K items similar to ITEM from STORE.
+(defun sem-similar (db item k embed-fn &optional read-fn)
+  "Return K items similar to ITEM from DB.
 
 EMBED-FN is used to convert item to a vector.  READ-FN defaults to
-`read' and is used to recover the emacs-lisp object back from the store."
-  (let ((results (sem-core-similar store (funcall embed-fn item) k)))
+`read' and is used to recover the emacs-lisp object back from the db."
+  (let ((results (sem-core-similar db (funcall embed-fn item) k)))
     (mapcar (lambda (it) (cons (car it) (funcall (or read-fn #'read) (cdr it)))) results)))
 
 (provide 'sem)

@@ -27,7 +27,7 @@ needed by ~sem-embed~ to generate embeddings.
   ;; functions
   (require 'sem-embed)
 
-  (setq sem-database-dir (expand-file-name "~/.emacs.d/sem/"))
+  (setq sem-data-dir (expand-file-name "~/.emacs.d/sem/"))
   (setq sem-embed-model-path (expand-file-name "~/.emacs.d/sem/model_O2.onnx"))
 
   (defun embed-batch-fn (items)
@@ -39,20 +39,20 @@ needed by ~sem-embed~ to generate embeddings.
     (aref (embed-batch-fn (list item)) 0))
 
   ;; The output dimension of default embedder from sem-embed is needed here
-  (sem-store-new "ml-test" sem-embed-dim)
-  (setq sem-store (sem-store-load "ml-test"))
+  (sem-db-new "ml-test" sem-embed-dim)
+  (setq sem-db (sem-db-load "ml-test"))
 
   ;; First we will add a few items to do similarity search
   (let ((items (list "hello world"
                      "this is an introduction"
                      "movies are bad"
                      "food is good")))
-    (sem-add-batch sem-store items #'embed-batch-fn))
+    (sem-add-batch sem-db items #'embed-batch-fn))
 
   ;; #'identity is the read-fn which is used to load back the lisp object from
-  ;; their string representation. By default the `sem-add' function uses `prin1'
-  ;; for building the strings representation.
-  (sem-similar sem-store "worst" 2 #'embed-fn #'identity)
+  ;; their string representation. By default the `sem-add' function uses
+  ;; `prin1-to-string' for building the strings representation.
+  (sem-similar sem-db "worst" 2 #'embed-fn #'identity)
   ;; ((0.33184681863908483 . "movies are bad") (0.25182008665115796 . "hello world"))
   ;; Output is a list of score, item pairs
 #+end_src
@@ -64,11 +64,11 @@ vectors for fast (and approximate) searches. Here is how you can do this:
   ;; All are sync functions in the current version
 
   ;; This builds an index on the vectors
-  (sem-build-index store)
+  (sem-build-index sem-db)
 
   ;; Once you have added more new data, run re-indexing (and other optimizations)
-  (sem-optimize store)
+  (sem-optimize sem-db)
 
   ;; Check item counts with
-  (sem-items-count store)
+  (sem-items-count sem-db)
 #+end_src
