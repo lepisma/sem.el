@@ -73,7 +73,8 @@
     (if (sem-db-present-p name)
         (error "Database %s already exists" name)
       (let ((db (sem-core-db-new sem-data-dir name)))
-        (sem-table-new db sem-default-table-name dim)))))
+        (sem-table-new db sem-default-table-name dim)
+        db))))
 
 (defun sem-db-load (name)
   "Load an existing db NAME and return."
