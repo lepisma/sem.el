@@ -94,6 +94,18 @@
 (defalias 'sem-table-delete #'sem-core-table-delete)
 (defalias 'sem-table-dim #'sem-core-table-dim)
 
+(defun sem-add-batch-chunked (db items embed-batch-fn chunk-size &optional write-fn table-name do-upsert)
+  "Similar to `sem-add-batch' but does so in chunks of size CHUNK-SIZE."
+  (let (chunk)
+    (mapc (lambda (item)
+            (push item chunk)
+            (when (= chunk-size (length chunk))
+              (sem-add-batch db chunk embed-batch-fn write-fn table-name do-upsert)
+              (setq chunk nil)))
+          items)
+    (when chunk
+      (sem-add-batch db chunk embed-batch-fn write-fn table-name do-upsert))))
+
 (defun sem-add-batch (db items embed-batch-fn &optional write-fn table-name do-upsert)
   "Add given ITEMS (list) to DB.
 
